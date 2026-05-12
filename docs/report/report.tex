@@ -10,8 +10,6 @@
 \usepackage{url}
 \usepackage{xurl}
 \usepackage{microtype}
-\usepackage{algorithm}
-\usepackage{algorithmic}
 \usepackage{multirow}
 \usepackage{float}
 \makeatletter
@@ -43,15 +41,15 @@ This paper implements and compares two classification methods for non-linearly s
 
 \section{INTRODUCTION}
 
-Binary classification of non-linearly separable data remains a fundamental challenge in machine learning. Two prominent approaches address this challenge through different mechanisms: ensemble methods that combine multiple weak classifiers, and kernel-based methods that transform the feature space.
+Binary classification of non-linearly separable data is one of the more instructive problems in machine learning—it forces algorithms to capture structure that no single linear boundary can represent. Two families of methods tackle this in fundamentally different ways: ensemble methods that combine many simple linear classifiers into a collectively expressive hypothesis, and kernel-based methods that geometrically reshape the problem so that a linear separator suffices.
 
-AdaBoost (Adaptive Boosting), introduced by Freund and Schapire~\cite{freund1997}, is an ensemble meta-algorithm that iteratively trains weak learners on reweighted versions of the training data, focusing subsequent learners on previously misclassified examples. The final classifier is a weighted majority vote of all weak learners. A key theoretical result is that the training error decreases exponentially with the number of boosting rounds, provided each weak learner performs slightly better than random~\cite{schapire1999}.
+AdaBoost (Adaptive Boosting), introduced by Freund and Schapire~\cite{freund1997}, builds a strong classifier iteratively: each round trains a new weak learner on a reweighted version of the training set, concentrating on examples the current ensemble misclassifies. The final hypothesis is a weighted majority vote, and under mild conditions the training error decreases exponentially with the number of boosting rounds.
 
-The Pocket Algorithm, proposed by Gallant~\cite{gallant1990}, extends the standard Perceptron learning rule for non-linearly separable data. While the Perceptron's convergence is guaranteed only for linearly separable problems, the Pocket Algorithm maintains a ``pocket'' copy of the best weight vector encountered during training, ensuring that the algorithm returns a useful classifier even when perfect separation is impossible.
+The Pocket Algorithm, proposed by Gallant~\cite{gallant1990}, adapts the classical Perceptron for non-linearly separable settings. Rather than diverging when no perfect separator exists, it maintains a running ``pocket'' copy of the best weight vector seen during training, guaranteeing a meaningful classifier regardless of separability.
 
-Support Vector Machines (SVMs), developed by Vapnik and colleagues~\cite{cortes1995}, find the maximum-margin hyperplane separating two classes. Through the kernel trick~\cite{boser1992}, SVMs can implicitly operate in high-dimensional feature spaces without explicitly computing the mapping, enabling non-linear decision boundaries in the original input space.
+Support Vector Machines (SVMs), developed by Vapnik and colleagues~\cite{cortes1995}, take a geometrically elegant approach: find the hyperplane that maximizes the margin between classes, then use the kernel trick to operate implicitly in a high-dimensional feature space---enabling curved decision boundaries in the original input space without ever constructing the transformation explicitly.
 
-This work implements AdaBoost with Pocket Algorithm weak learners from scratch using only NumPy, and compares it against scikit-learn's SVM implementation on two benchmark datasets: the Banana dataset (a synthetic two-dimensional problem with a curved decision boundary) and the Splice dataset (a high-dimensional biological sequence classification problem).
+This work pits these two paradigms against each other: AdaBoost with Pocket Algorithm weak learners implemented from scratch in NumPy, versus scikit-learn's \texttt{SVC}, on the Banana dataset (a two-dimensional problem with crescent-shaped class regions) and the Splice dataset (a 60-dimensional biological sequence classification task).
 
 \section{OBJECTIVES}
 
@@ -96,37 +94,13 @@ Each input vector $\mathbf{x} \in \mathbb{R}^d$ is augmented with a bias term:
 This allows the decision boundary $\mathbf{w}^T \tilde{\mathbf{x}} = 0$ to include an offset without a separate bias parameter.
 
 \subsubsection{Training Procedure}
-The training procedure is formalized in Algorithm~\ref{alg:pocket}.
+The algorithm maintains two weight vectors: a ``wandering'' vector $\mathbf{v}$ that receives all updates, and a ``pocket'' vector $\mathbf{w}$ that holds the best weights found so far. Both are initialized to $\mathbf{0}$, along with run counters $n_v = n_w = 0$ tracking the length of each vector's current consecutive correct-classification streak.
 
-\begin{algorithm}[H]
-\caption{Pocket Algorithm}
-\label{alg:pocket}
-\begin{algorithmic}[1]
-\REQUIRE Training data $\{(\mathbf{x}_i, y_i)\}_{i=1}^N$, max iterations $T$
-\ENSURE Best weight vector $\mathbf{w}$
-\STATE Initialize $\mathbf{v} \leftarrow \mathbf{0}$, $\mathbf{w} \leftarrow \mathbf{0}$, $n_v \leftarrow 0$, $n_w \leftarrow 0$
-\FOR{$t = 1$ to $T$}
-    \STATE Select random index $j \in \{1, \ldots, N\}$
-    \STATE $\hat{y} \leftarrow \text{sgn}(\mathbf{v}^T \tilde{\mathbf{x}}_j)$
-    \IF{$\hat{y} \cdot y_j > 0$}
-        \STATE $n_v \leftarrow n_v + 1$
-    \ELSE
-        \IF{$n_v > n_w$}
-            \STATE $\mathbf{w} \leftarrow \mathbf{v}$ \quad (put in pocket)
-            \STATE $n_w \leftarrow n_v$
-        \ENDIF
-        \STATE $\mathbf{v} \leftarrow \mathbf{v} + y_j \tilde{\mathbf{x}}_j$ \quad (Perceptron update)
-        \STATE $n_v \leftarrow 0$
-    \ENDIF
-\ENDFOR
-\IF{$n_v > n_w$}
-    \STATE $\mathbf{w} \leftarrow \mathbf{v}$
-\ENDIF
-\RETURN $\mathbf{w}$
-\end{algorithmic}
-\end{algorithm}
-
-The sign function is defined as $\text{sgn}(z) = +1$ if $z \geq 0$ and $\text{sgn}(z) = -1$ otherwise. The algorithm runs for a fixed $T = 10{,}000$ iterations as specified.
+At each of $T$ iterations, a training example $(\mathbf{x}_j, y_j)$ is drawn uniformly at random. The sign function used throughout is $\text{sgn}(z) = +1$ if $z \geq 0$ and $-1$ otherwise. If $\mathbf{v}$ classifies $\mathbf{x}_j$ correctly---that is, $\text{sgn}(\mathbf{v}^T \tilde{\mathbf{x}}_j) = y_j$---the streak counter $n_v$ increments. On a misclassification, if the current streak $n_v$ exceeds the pocket record $n_w$, the pocket is updated: $\mathbf{w} \leftarrow \mathbf{v}$, $n_w \leftarrow n_v$. The standard Perceptron correction is then applied,
+\begin{equation}
+\mathbf{v} \leftarrow \mathbf{v} + y_j \tilde{\mathbf{x}}_j,
+\end{equation}
+and $n_v$ resets to zero. After all $T = 10{,}000$ iterations, a final comparison ensures the best-ever weights are not discarded, and the algorithm returns $\mathbf{w}$.
 
 \subsubsection{Prediction}
 Classification of a new sample uses:
@@ -139,33 +113,19 @@ Classification of a new sample uses:
 The AdaBoost algorithm constructs a strong classifier as a weighted combination of weak learners. The implementation follows the original AdaBoost.M1 formulation~\cite{freund1997}.
 
 \subsubsection{Training Procedure}
-The AdaBoost training procedure is detailed in Algorithm~\ref{alg:adaboost}.
-
-\begin{algorithm}[H]
-\caption{AdaBoost with Pocket Algorithm}
-\label{alg:adaboost}
-\begin{algorithmic}[1]
-\REQUIRE Training data $S = \{(\mathbf{x}_i, y_i)\}_{i=1}^N$, rounds $K$
-\ENSURE Ensemble $\{(\alpha_t, \mathbf{w}_t)\}_{t=1}^K$
-\STATE Initialize weights: $D_1(i) = 1/N$ for all $i$
-\FOR{$t = 1$ to $K$}
-    \STATE Sample $S_t$ from $S$ with replacement using $D_t$
-    \STATE Train weak learner: $\mathbf{w}_t \leftarrow \text{Pocket}(S_t, T\!=\!10000)$
-    \STATE Compute predictions: $h_t(\mathbf{x}_i) = \text{sgn}(\mathbf{w}_t^T \tilde{\mathbf{x}}_i)$
-    \STATE Compute weighted error: $\epsilon_t = \sum_{i: h_t(\mathbf{x}_i) \neq y_i} D_t(i)$
-    \IF{$\epsilon_t \leq 10^{-12}$}
-        \STATE $\alpha_t \leftarrow \frac{1}{2}\ln\!\left(\frac{1 - 10^{-12}}{10^{-12}}\right)$; add to ensemble; \textbf{break}
-    \ENDIF
-    \IF{$\epsilon_t \geq 0.5$}
-        \STATE Try flipping: if $-h_t$ gives $\epsilon < 0.5$, set $\mathbf{w}_t \leftarrow -\mathbf{w}_t$
-        \STATE Otherwise skip this round
-    \ENDIF
-    \STATE $\alpha_t \leftarrow \frac{1}{2}\ln\!\left(\frac{1 - \epsilon_t}{\epsilon_t}\right)$
-    \STATE Update: $D_{t+1}(i) \propto D_t(i) \cdot \exp(-\alpha_t y_i h_t(\mathbf{x}_i))$
-    \STATE Normalize $D_{t+1}$ so $\sum_i D_{t+1}(i) = 1$
-\ENDFOR
-\end{algorithmic}
-\end{algorithm}
+Training begins with a uniform distribution $D_1(i) = 1/N$ over all $N$ examples. At each round $t = 1, \ldots, K$, a bootstrap sample $S_t$ is drawn from the training set with probabilities $D_t$, and a Pocket Algorithm weak learner $h_t(\mathbf{x}) = \text{sgn}(\mathbf{w}_t^T \tilde{\mathbf{x}})$ is trained on $S_t$. The weighted classification error is
+\begin{equation}
+\epsilon_t = \sum_{i:\, h_t(\mathbf{x}_i) \neq y_i} D_t(i).
+\end{equation}
+Provided $\epsilon_t < 0.5$, the learner's confidence weight is set to
+\begin{equation}
+\alpha_t = \frac{1}{2}\ln\!\left(\frac{1 - \epsilon_t}{\epsilon_t}\right),
+\end{equation}
+and the distribution is updated to emphasize misclassified examples:
+\begin{equation}
+D_{t+1}(i) \propto D_t(i) \cdot \exp\!\bigl(-\alpha_t\, y_i\, h_t(\mathbf{x}_i)\bigr),
+\end{equation}
+then renormalized so that $\sum_i D_{t+1}(i) = 1$. Examples that $h_t$ got wrong receive increased weight; correctly classified examples are down-weighted, steering each successive learner toward the current ensemble's hardest cases.
 
 \subsubsection{Ensemble Prediction}
 The final hypothesis is the weighted sign vote:
@@ -357,6 +317,7 @@ Table~\ref{tab:comparison} presents the final comparison between methods.
 \centering
 \caption{Final comparison: AdaBoost vs.\ SVM}
 \label{tab:comparison}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{l l r r r r}
 \toprule
 \textbf{Dataset} & \textbf{Method} & \textbf{Train} & \textbf{Test} & \textbf{Fit (s)} & \textbf{Infer (s)} \\
@@ -367,22 +328,23 @@ Table~\ref{tab:comparison} presents the final comparison between methods.
 \multirow{2}{*}{Splice} & AdaBoost & 100.00\% & 83.17\% & 32.85 & 0.046 \\
  & SVM (RBF) & 100.00\% & 89.15\% & 0.061 & 0.183 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 \section{ANALYSIS AND DISCUSSION}
 
 \subsection{Test Accuracy}
 
-On the Banana dataset, the RBF SVM achieved 90.14\% test accuracy compared to 89.18\% for the Boosted Perceptron at $K=1000$. The gap is modest ($<$1 percentage point), indicating that the boosted linear ensemble approximates the curved decision boundary reasonably well.
+On Banana, the RBF SVM edges out the Boosted Perceptron by under one percentage point (90.14\% vs.\ 89.18\% at $K=1000$). That the gap is so narrow is arguably more interesting than the outcome itself: an ensemble of 1000 linear classifiers comes within one point of a kernel that implicitly operates in infinite dimensions.
 
-On the Splice dataset, the gap widened considerably: SVM achieved 89.15\% versus 83.17\% for AdaBoost. The 60-dimensional feature space favors the RBF kernel, which can model complex non-linear interactions between features through its implicit infinite-dimensional mapping. The ensemble of linear classifiers, while achieving perfect training accuracy, generalizes less effectively.
+On Splice the story changes. A 6-point gap (89.15\% vs.\ 83.17\%) is not noise---it reflects a genuine structural advantage. In 60 dimensions, individual linear cuts can only carve out so much signal; the RBF kernel's ability to model complex, non-linear feature interactions gives it a decisive edge, while the AdaBoost ensemble, despite hitting 100\% training accuracy, fails to generalize comparably.
 
 \subsection{Overfitting Behavior}
 
-The Splice AdaBoost results exhibit a characteristic overfitting pattern: training accuracy reaches 100\% by $K=800$ while test accuracy plateaus around 83\%. The widening train--test gap indicates that additional weak learners overfit to training noise rather than capturing generalizable structure. Interestingly, the Banana AdaBoost shows more modest overfitting (92.75\% train vs.\ 89.18\% test), suggesting that the simpler two-dimensional structure limits the damage from overfitting.
+Splice AdaBoost is a textbook case of memorization: training accuracy climbs monotonically to 100\% by round 800 while test accuracy stagnates around 83\%. Each additional weak learner is fitting idiosyncrasies of the resampled bootstrap distribution rather than generalizable structure. Banana fares better---a 3.5-point train--test gap at $K=1000$ compared to nearly 17 points on Splice---largely because the simpler two-dimensional geometry leaves less spurious signal to chase.
 
-The SVM also achieves 100\% training accuracy on Splice, but its test accuracy (89.15\%) is substantially higher. The maximum-margin principle provides implicit regularization that the AdaBoost ensemble lacks when using Pocket Algorithm weak learners.
+The SVM also achieves 100\% training accuracy on Splice, yet its test accuracy is 89.15\%---substantially higher. The maximum-margin principle acts as an implicit regularizer by pushing the decision boundary as far as possible from the nearest training points; AdaBoost with Pocket Algorithm base learners has no equivalent structural bias to resist memorization.
 
 \subsection{Kernel Analysis}
 
@@ -402,7 +364,7 @@ AdaBoost inference requires evaluating $K$ weight vectors and summing weighted v
 
 \subsection{AdaBoost Convergence}
 
-The accuracy-vs-$K$ curves reveal different convergence behaviors between datasets. On Banana, test accuracy climbs rapidly to $\sim$86\% by $K=100$, then improves gradually, peaking near $K=900$ (89.53\%) before slight degradation at $K=1000$. On Splice, improvement is more gradual but sustained, with test accuracy still increasing between $K=800$ and $K=900$. Neither dataset exhibits the ``resistance to overfitting'' phenomenon sometimes attributed to AdaBoost~\cite{schapire1998}; both show eventual test accuracy stagnation or slight decline after prolonged boosting.
+The accuracy-vs-$K$ curves reveal different convergence behaviors between datasets. On Banana, test accuracy climbs rapidly to $\sim$86\% by $K=100$, then improves gradually, peaking near $K=900$ (89.53\%) before slight degradation at $K=1000$. On Splice, improvement is more gradual but sustained, with test accuracy still increasing between $K=800$ and $K=900$. Neither dataset exhibits the ``resistance to overfitting'' sometimes attributed to AdaBoost in the margin-theory literature; both show eventual test accuracy stagnation or slight decline after prolonged boosting.
 
 \subsection{Limitations}
 
@@ -417,7 +379,7 @@ Several limitations affect the comparison:
 
 \section{CONCLUSION}
 
-This work implemented and compared Boosted Perceptrons (AdaBoost with Pocket Algorithm weak learners) and Support Vector Machines on the Banana and Splice datasets. The key findings are:
+This work pitted two principled approaches to non-linear binary classification against each other---Boosted Perceptrons built from Pocket Algorithm weak learners, and RBF-kernel SVMs---across datasets that stress-test different aspects of each method. The key findings are:
 
 \begin{enumerate}
 \item \textbf{SVM achieves higher test accuracy} on both datasets: 90.14\% vs.\ 89.18\% on Banana, and 89.15\% vs.\ 83.17\% on Splice. The RBF kernel emerged as the best choice across both problems.
@@ -429,17 +391,14 @@ This work implemented and compared Boosted Perceptrons (AdaBoost with Pocket Alg
 
 For practical applications where both accuracy and computational efficiency matter, the RBF-kernel SVM provides the better trade-off. AdaBoost with Pocket Algorithm learners remains an instructive demonstration of how weak learners can be combined into strong classifiers, and offers more transparent control over model complexity through the ensemble size $K$.
 
+Together, these results suggest that maximum-margin geometry---even with an off-the-shelf library---can match or outperform a carefully designed boosting ensemble at a fraction of the training cost, particularly when the feature space is rich and training data is limited.
+
 \begin{thebibliography}{9}
 
 \bibitem{freund1997}
 Y.~Freund and R.~E.~Schapire.
 \newblock A decision-theoretic generalization of on-line learning and an application to boosting.
 \newblock {\em Journal of Computer and System Sciences}, 55(1):119--139, 1997.
-
-\bibitem{schapire1999}
-R.~E.~Schapire.
-\newblock A brief introduction to boosting.
-\newblock In {\em Proceedings of the 16th International Joint Conference on Artificial Intelligence (IJCAI)}, pages 1401--1406, 1999.
 
 \bibitem{gallant1990}
 S.~I.~Gallant.
@@ -451,11 +410,6 @@ C.~Cortes and V.~Vapnik.
 \newblock Support-vector networks.
 \newblock {\em Machine Learning}, 20(3):273--297, 1995.
 
-\bibitem{boser1992}
-B.~E.~Boser, I.~M.~Guyon, and V.~N.~Vapnik.
-\newblock A training algorithm for optimal margin classifiers.
-\newblock In {\em Proceedings of the 5th Annual Workshop on Computational Learning Theory (COLT)}, pages 144--152. ACM, 1992.
-
 \bibitem{platt1998}
 J.~C.~Platt.
 \newblock Sequential minimal optimization: A fast algorithm for training support vector machines.
@@ -466,11 +420,6 @@ B.~Sch\"{o}lkopf and A.~J.~Smola.
 \newblock {\em Learning with Kernels: Support Vector Machines, Regularization, Optimization, and Beyond}.
 \newblock MIT Press, 2002.
 
-\bibitem{schapire1998}
-R.~E.~Schapire, Y.~Freund, P.~Bartlett, and W.~S.~Lee.
-\newblock Boosting the margin: A new explanation for the effectiveness of voting methods.
-\newblock {\em The Annals of Statistics}, 26(5):1651--1686, 1998.
-
 \bibitem{chang2011}
 C.-C.~Chang and C.-J.~Lin.
 \newblock {LIBSVM}: A library for support vector machines.
@@ -480,7 +429,7 @@ C.-C.~Chang and C.-J.~Lin.
 
 \appendix
 
-\section*{APPENDIX}
+\section*{}
 \subsection*{A. Full AdaBoost Accuracy Tables}
 
 Table~\ref{tab:banana-full} and Table~\ref{tab:splice-full} present the complete AdaBoost accuracy for both datasets at all evaluated checkpoints ($K = 10, 20, \ldots, 1000$).
