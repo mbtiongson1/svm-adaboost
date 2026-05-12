@@ -156,6 +156,144 @@ All kernels work on Splice (60-d feature space provides linear structure), but R
 
 ---
 
+## Methodology & Math Audit (vs. PDF Pseudocode)
+
+Full line-by-line comparison of `classify()`, `adabtrain()`, and `adabpredict()` against the PDF pseudocode.
+
+---
+
+### Pocket Algorithm — `classify()`
+
+#### PDF Pseudocode (verbatim logic)
+1. Set nv = nw = 0 and vi = wi = 0 for i = 0,1,…,d; Set itercnt = 0
+2. Randomly choose xj, yj from training set
+3. ŷj = +1 if v·xj ≥ 0, else −1
+4. If ŷjyj > 0 (correct): nv = nv + 1  
+   Otherwise:  
+   &nbsp;&nbsp;• if nv > nw: set w = v and nw = nv  
+   &nbsp;&nbsp;• vi = vi + yj·xij for i = 0,…,d  
+   &nbsp;&nbsp;• nv = 0
+5. itercnt = itercnt + 1
+6. Go to step 2 unless itercnt > maxitercnt
+
+#### Findings
+
+| Step | PDF Spec | Code | Verdict |
+|---|---|---|---|
+| Init | nv=nw=0, v=w=0 | `v=np.zeros(n_features)`, `w=np.zeros(n_features)`, `nv=0`, `nw=0` | ✅ |
+| Bias | x0 = 1 prepended | `Xb = _add_bias(X)` → prepends column of ones | ✅ |
+| Random sample | Random xj from training set | `random_indices = rng.integers(n_samples, size=maxitercnt+1)` then loop | ✅ |
+| Classification rule | ŷ = +1 if v·xj ≥ 0 else −1 | `yhat = 1.0 if np.dot(v, Xb[j]) >= 0 else -1.0` | ✅ |
+| Correct branch | nv += 1 | `nv += 1` | ✅ |
+| Pocket update | if nv > nw: w=v, nw=nv | `if nv > nw: w = v.copy(); nw = nv` | ✅ |
+| v update order | Pocket check BEFORE v update | `if nv > nw` block precedes `v += y[j]*Xb[j]` | ✅ |
+| Perceptron rule | vi = vi + yj·xij for all i | `v += y[j] * Xb[j]` (vector form, with bias at index 0) | ✅ |
+| nv reset | nv = 0 after update | `nv = 0` | ✅ |
+| Iteration count | Stop when itercnt > maxitercnt (runs 10001 times) | `size=maxitercnt+1` → 10001 indices → 10001 loop iterations | ✅ See note 1 |
+| Return | Output w | `return w` | ✅ |
+
+**Note 1 — Iteration count (corrects previous audit flag):**  
+The PDF says "Go to step 2 unless itercnt > maxitercnt", with itercnt starting at 0 and incrementing *after* each step 2–4 body. The body therefore runs for itercnt = 0,1,…,10000 — stopping only when itercnt increments to 10001 (which is > 10000). That is **10001 body executions**. The code's `size=maxitercnt+1 = 10001` exactly matches this. The previous audit flag labelling this an "off-by-one bug" was **incorrect** — the code is right. The comment `#max 10000` is the only misleading element (should read 10001 per pseudocode).
+
+**➕ Post-loop final pocket check (not in PDF):**  
+```python
+if nv > nw:  #classify, put in pocket
+    w = v.copy()
+```
+The PDF pseudocode terminates at step 6 without a final check. If the last run of consecutive correct classifications is the longest seen, the loop ends before any misclassification can trigger the pocket swap — so w would never capture that best streak. The post-loop check fixes this. It is a **correct and necessary addition** that makes the algorithm more faithful to its intent of keeping the best weight vector.
+
+---
+
+### AdaBoost Training — `adabtrain()`
+
+#### PDF Pseudocode (verbatim logic)
+1. Initialize w1(i) = 1/N
+2. for t = 1,…,K:  
+   a. Select St from S with replacement according to wt  
+   b. Train weak learner on St → ht  
+   c. εt = Σj wt(j)·δ(yj ≠ ht(xj))  &emsp;*(on full S, not St)*  
+   d. αt = ½ ln((1−εt)/εt)  
+   e. wt+1(i) = wt(i)·exp(−αt·yi·ht(xi)) / Zt  
+      Zt = Σi wt(i)·exp(−αt·yi·ht(xi))
+
+H(x) = sgn(Σ αt·ht(x))
+
+#### Findings
+
+| Step | PDF Spec | Code | Verdict |
+|---|---|---|---|
+| Init weights | w1(i) = 1/N | `weights = np.ones(n_samples) / n_samples` | ✅ |
+| Loop range | t = 1,…,K | `for t in range(1, K+1)` | ✅ |
+| Bootstrap sample | St from S with replacement, p=wt | `rng.choice(n_samples, size=n_samples, replace=True, p=weights)` | ✅ |
+| Train weak learner | Train on St | `classify(X[sample_idx], y[sample_idx], ...)` | ✅ |
+| Error on full S | εt = Σ wt(j)·δ(yj≠ht(xj)) on **S** | `pred = predict(X, w=w_t)` then `err = np.sum(weights[pred != y])` — X is full training set | ✅ |
+| α formula | αt = ½ ln((1−εt)/εt) | `alpha_t = 0.5 * np.log((1 - err) / err)` | ✅ |
+| Weight numerator | wt(i)·exp(−αt·yi·ht(xi)) | `weights *= np.exp(-alpha_t * y * pred)` — `y*pred` = yi·ht(xi) | ✅ |
+| Normalization Zt | Divide by Σi wt(i)·exp(−αt·yi·ht(xi)) | `weights /= weights.sum()` — after in-place multiply, sum = Zt | ✅ |
+| Sign conventions | +1/−1 labels, weights increase for misclassified | For correct: yi·ht(xi)=+1 → exp(−αt)<1 → weight ↓; for wrong: yi·ht(xi)=−1 → exp(+αt)>1 → weight ↑ | ✅ |
+| Ensemble classifier | H(x) = sgn(Σ αt·ht(x)) | `adabpredict`: `scores += alpha_t * _sign(Xb @ w_t)` then `_sign(scores)` | ✅ |
+
+#### Deviations from PDF (not bugs, but additions)
+
+**⚠️ Deviation 1 — Early termination when εt ≈ 0:**
+```python
+if err <= 1e-12:
+    alpha_t = 0.5 * np.log((1 - 1e-12) / 1e-12)
+    ensemble.append((float(alpha_t), w_t))
+    ...
+    break
+```
+The PDF has no such guard. When εt → 0, the formula αt = ½ ln((1−εt)/εt) diverges to +∞. The code clamps εt to 1e-12, yielding αt ≈ 13.8, then breaks. Mathematically this is reasonable — a perfect weak learner would dominate the ensemble and further iterations are unnecessary. However, **it is not specified in the PDF**, so it counts as an undocumented extension.
+
+**⚠️ Deviation 2 — Flip-and-skip when εt ≥ 0.5:**
+```python
+if err >= 0.5:
+    flipped_pred = -pred
+    flipped_err = float(np.sum(weights[flipped_pred != y]))
+    if flipped_err < 0.5:
+        w_t = -w_t; pred = flipped_pred; err = flipped_err
+    else:
+        ...
+        continue
+```
+The PDF pseudocode assumes the weak learner always satisfies εt < 0.5 (better than random). When εt ≥ 0.5, the PDF formula produces αt ≤ 0, and weight updates would *reward* misclassification — corrupting the ensemble. The code handles this two ways:
+- **Flip**: negating w_t reverses all predictions; if flipped εt < 0.5, this recovers a valid weak learner. This is mathematically sound.
+- **Skip**: if neither the original nor the flipped hypothesis is better than random, the round is discarded and weights remain unchanged. This is also mathematically safe (wasting a round but not corrupting state).
+
+**This extension is necessary in practice** because the Pocket Algorithm on a bootstrapped, reweighted sample can occasionally produce a bad hypothesis. The PDF does not address this case.
+
+**➕ Addition — Checkpoint history tracking:**
+```python
+if t in checkpoints:
+    history[t] = list(ensemble)
+```
+Not in the PDF. Allows efficient extraction of the ensemble state at any K without re-running — used to compute accuracy curves across all K values in one pass. No effect on the math.
+
+---
+
+### Ensemble Prediction — `adabpredict()`
+
+| Step | PDF Spec | Code | Verdict |
+|---|---|---|---|
+| Weighted vote | Σ αt·ht(x) | `scores += alpha_t * _sign(Xb @ w_t)` | ✅ |
+| Final sign | sgn(Σ αt·ht(x)) | `return _sign(scores)` | ✅ |
+| Edge: empty ensemble | Not specified | Returns `np.ones(X.shape[0])` (defaults to +1) | ➕ Defensive |
+
+---
+
+### Summary of Math Audit
+
+| Finding | Severity | Description |
+|---|---|---|
+| Iteration count `maxitercnt+1` is correct | ✅ Correction | Previous audit incorrectly flagged this as off-by-one. The PDF's "unless itercnt > maxitercnt" produces exactly 10001 iterations, which the code implements correctly. |
+| Comment `#max 10000` is misleading | ⚠️ Minor | Actual count is 10001 per PDF logic. Comment should read `#10001 iterations: runs while itercnt ≤ maxitercnt` |
+| Post-loop pocket check | ➕ Good addition | Not in PDF but logically necessary to capture the best trailing streak |
+| εt ≈ 0 early termination | ⚠️ Deviation | Not in PDF; necessary numerical guard against log(0). Capped α breaks the loop early. |
+| εt ≥ 0.5 flip-and-skip | ⚠️ Deviation | Not in PDF; necessary practical guard against bad weak learners. Math remains valid. |
+| All core formulas | ✅ Correct | Perceptron rule, α formula, weight update, normalization, ensemble sign vote — all match PDF exactly. |
+
+---
+
 ## Deliverable Audit
 
 ### Deliverable 1 — Jupyter Notebook with Python Code for Boosted Perceptron (40 pts)
@@ -169,7 +307,7 @@ All kernels work on Splice (60-d feature space provides linear structure), but R
 | Single perceptron validation | `code-perceptron-eval` | ✅ | Trained on synthetic Gaussians; train=100%, test=100%, SSE=0.0 |
 | AdaBoost on Banana (K=10…1000) | `code-banana-adab` | ✅ | All cells executed, numeric outputs present |
 | AdaBoost on Splice (K=10…1000) | `code-splice-adab` | ✅ | All cells executed, numeric outputs present |
-| ⚠️ Off-by-one in iteration count | `code-classify` | ⚠️ | `rng.integers(n_samples, size=maxitercnt + 1)` generates 10 001 indices (comment says `#max 10000`). One extra iteration runs. Math is unaffected; pure off-by-one in loop length. |
+| ✅ Iteration count matches PDF | `code-classify` | ✅ | `rng.integers(n_samples, size=maxitercnt+1)` produces 10 001 iterations, matching the PDF's "unless itercnt > maxitercnt" termination. Comment `#max 10000` is misleading but the logic is correct. |
 
 ### Deliverable 2 — Plots of Training and Test Accuracy vs K (20 pts)
 
@@ -207,7 +345,7 @@ All kernels work on Splice (60-d feature space provides linear structure), but R
 
 | Deliverable | Points | Status |
 |---|---:|---|
-| 1. Boosted Perceptron code | 40 | ✅ Complete — one minor off-by-one (10 001 vs 10 000 iterations, non-breaking) |
+| 1. Boosted Perceptron code | 40 | ✅ Complete — all math correct; two deviations (εt edge cases) are necessary engineering additions |
 | 2. Accuracy vs K plots | 20 | ✅ Complete — both plots rendered with outputs |
 | 3. SVM kernel & parameter settings | 20 | ✅ Complete — grid search, best configs, per-kernel tables |
 | 4. SVM vs AdaBoost comparison | 20 | ✅ Complete — tables, bar chart, discussion, conclusion |
