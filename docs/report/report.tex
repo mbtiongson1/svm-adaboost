@@ -207,6 +207,13 @@ All custom code (Pocket Algorithm, AdaBoost) is implemented in Python using only
 
 The Pocket Algorithm was first validated on a synthetic dataset consisting of 200 two-dimensional points drawn from two Gaussians ($\mathcal{N}([0,0]^T, I)$ and $\mathcal{N}([10,10]^T, I)$) with 100 training and 100 test samples. The algorithm achieved 100\% accuracy on both sets with SSE~$= 0.0$, confirming correct implementation.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{gaussian_dataset.png}
+\caption{Synthetic Gaussian validation dataset. Training points (solid circles) and test points (crosses) from $\mathcal{N}([0,0]^T,I)$ (class $-1$) and $\mathcal{N}([10,10]^T,I)$ (class $+1$).}
+\label{fig:gaussian}
+\end{figure}
+
 \subsection{AdaBoost Results}
 
 \subsubsection{Banana Dataset}
@@ -237,6 +244,13 @@ Table~\ref{tab:banana-adaboost} presents the AdaBoost accuracy at selected check
 
 Training time for the full $K=1000$ ensemble was 32.80~s. Inference time over 4,900 test samples was 0.020~s.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{banana_adaboost_accuracy.png}
+\caption{AdaBoost training and test accuracy vs.\ $K$ on the Banana dataset. Test accuracy plateaus around $K=700$--$900$ before slight degradation at $K=1000$.}
+\label{fig:banana-adaboost}
+\end{figure}
+
 \subsubsection{Splice Dataset}
 Table~\ref{tab:splice-adaboost} presents the AdaBoost accuracy at selected checkpoints on the Splice dataset.
 
@@ -264,6 +278,13 @@ Table~\ref{tab:splice-adaboost} presents the AdaBoost accuracy at selected check
 \end{table}
 
 Training time for the full $K=1000$ ensemble was 32.85~s. Inference time over 1,991 test samples was 0.046~s.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{splice_adaboost_accuracy.png}
+\caption{AdaBoost training and test accuracy vs.\ $K$ on the Splice dataset. Training accuracy reaches 100\% by $K\approx800$ while test accuracy stagnates around 83\%, indicating overfitting.}
+\label{fig:splice-adaboost}
+\end{figure}
 
 \subsection{SVM Results}
 
@@ -331,6 +352,13 @@ Table~\ref{tab:comparison} presents the final comparison between methods.
 \end{tabular}%
 }
 \end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{test_accuracy_comparison.png}
+\caption{Final test accuracy of AdaBoost ($K=1000$) vs.\ best RBF SVM on both datasets. SVM leads by $\sim$1 pp on Banana and $\sim$6 pp on Splice.}
+\label{fig:comparison}
+\end{figure}
 
 \section{ANALYSIS AND DISCUSSION}
 
