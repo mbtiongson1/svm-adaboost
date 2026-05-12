@@ -41,15 +41,15 @@ This paper implements and compares two classification methods for non-linearly s
 
 \section{INTRODUCTION}
 
-Binary classification of non-linearly separable data is one of the more instructive problems in machine learning—it forces algorithms to capture structure that no single linear boundary can represent. Two families of methods tackle this in fundamentally different ways: ensemble methods that combine many simple linear classifiers into a collectively expressive hypothesis, and kernel-based methods that geometrically reshape the problem so that a linear separator suffices.
+Binary classification of non-linearly separable data requires algorithms to capture structure that no single linear boundary can represent. Two broad families of methods address this: ensemble methods that combine many simple linear classifiers into a more expressive hypothesis, and kernel-based methods that map the input space so that a linear separator becomes applicable.
 
 AdaBoost (Adaptive Boosting), introduced by Freund and Schapire~\cite{freund1997}, builds a strong classifier iteratively: each round trains a new weak learner on a reweighted version of the training set, concentrating on examples the current ensemble misclassifies. The final hypothesis is a weighted majority vote, and under mild conditions the training error decreases exponentially with the number of boosting rounds.
 
 The Pocket Algorithm, proposed by Gallant~\cite{gallant1990}, adapts the classical Perceptron for non-linearly separable settings. Rather than diverging when no perfect separator exists, it maintains a running ``pocket'' copy of the best weight vector seen during training, guaranteeing a meaningful classifier regardless of separability.
 
-Support Vector Machines (SVMs), developed by Vapnik and colleagues~\cite{cortes1995}, take a geometrically elegant approach: find the hyperplane that maximizes the margin between classes, then use the kernel trick to operate implicitly in a high-dimensional feature space---enabling curved decision boundaries in the original input space without ever constructing the transformation explicitly.
+Support Vector Machines (SVMs), developed by Vapnik and colleagues~\cite{cortes1995}, find the maximum-margin hyperplane separating two classes. Using the kernel trick, SVMs operate implicitly in a high-dimensional feature space, enabling non-linear decision boundaries without explicitly computing the feature mapping.
 
-This work pits these two paradigms against each other: AdaBoost with Pocket Algorithm weak learners implemented from scratch in NumPy, versus scikit-learn's \texttt{SVC}, on the Banana dataset (a two-dimensional problem with crescent-shaped class regions) and the Splice dataset (a 60-dimensional biological sequence classification task).
+This work compares AdaBoost with Pocket Algorithm weak learners, implemented from scratch in NumPy, against scikit-learn's \texttt{SVC} on the Banana dataset (a two-dimensional problem with crescent-shaped class regions) and the Splice dataset (a 60-dimensional biological sequence classification task).
 
 \section{OBJECTIVES}
 
@@ -96,7 +96,7 @@ This allows the decision boundary $\mathbf{w}^T \tilde{\mathbf{x}} = 0$ to inclu
 \subsubsection{Training Procedure}
 The algorithm maintains two weight vectors: a ``wandering'' vector $\mathbf{v}$ that receives all updates, and a ``pocket'' vector $\mathbf{w}$ that holds the best weights found so far. Both are initialized to $\mathbf{0}$, along with run counters $n_v = n_w = 0$ tracking the length of each vector's current consecutive correct-classification streak.
 
-At each of $T$ iterations, a training example $(\mathbf{x}_j, y_j)$ is drawn uniformly at random. The sign function used throughout is $\text{sgn}(z) = +1$ if $z \geq 0$ and $-1$ otherwise. If $\mathbf{v}$ classifies $\mathbf{x}_j$ correctly---that is, $\text{sgn}(\mathbf{v}^T \tilde{\mathbf{x}}_j) = y_j$---the streak counter $n_v$ increments. On a misclassification, if the current streak $n_v$ exceeds the pocket record $n_w$, the pocket is updated: $\mathbf{w} \leftarrow \mathbf{v}$, $n_w \leftarrow n_v$. The standard Perceptron correction is then applied,
+At each of $T$ iterations, a training example $(\mathbf{x}_j, y_j)$ is drawn uniformly at random. The sign function used throughout is $\text{sgn}(z) = +1$ if $z \geq 0$ and $-1$ otherwise. If $\mathbf{v}$ classifies $\mathbf{x}_j$ correctly (i.e., $\text{sgn}(\mathbf{v}^T \tilde{\mathbf{x}}_j) = y_j$), the streak counter $n_v$ increments. On a misclassification, if the current streak $n_v$ exceeds the pocket record $n_w$, the pocket is updated: $\mathbf{w} \leftarrow \mathbf{v}$, $n_w \leftarrow n_v$. The standard Perceptron correction is then applied,
 \begin{equation}
 \mathbf{v} \leftarrow \mathbf{v} + y_j \tilde{\mathbf{x}}_j,
 \end{equation}
@@ -336,19 +336,19 @@ Table~\ref{tab:comparison} presents the final comparison between methods.
 
 \subsection{Test Accuracy}
 
-On Banana, the RBF SVM edges out the Boosted Perceptron by under one percentage point (90.14\% vs.\ 89.18\% at $K=1000$). That the gap is so narrow is arguably more interesting than the outcome itself: an ensemble of 1000 linear classifiers comes within one point of a kernel that implicitly operates in infinite dimensions.
+On Banana, the RBF SVM achieves 90.14\% test accuracy versus 89.18\% for AdaBoost at $K=1000$, a difference of under one percentage point. The boosted ensemble of linear classifiers approximates the curved boundary reasonably well given its restricted hypothesis class.
 
-On Splice the story changes. A 6-point gap (89.15\% vs.\ 83.17\%) is not noise---it reflects a genuine structural advantage. In 60 dimensions, individual linear cuts can only carve out so much signal; the RBF kernel's ability to model complex, non-linear feature interactions gives it a decisive edge, while the AdaBoost ensemble, despite hitting 100\% training accuracy, fails to generalize comparably.
+On Splice, the gap widens to 6 percentage points (89.15\% vs.\ 83.17\%). In 60 dimensions, the RBF kernel's capacity to model non-linear feature interactions provides a measurable advantage over an ensemble of linear classifiers. AdaBoost reaches 100\% training accuracy on this dataset but generalizes considerably worse than the SVM.
 
 \subsection{Overfitting Behavior}
 
-Splice AdaBoost is a textbook case of memorization: training accuracy climbs monotonically to 100\% by round 800 while test accuracy stagnates around 83\%. Each additional weak learner is fitting idiosyncrasies of the resampled bootstrap distribution rather than generalizable structure. Banana fares better---a 3.5-point train--test gap at $K=1000$ compared to nearly 17 points on Splice---largely because the simpler two-dimensional geometry leaves less spurious signal to chase.
+On Splice, AdaBoost exhibits clear overfitting: training accuracy reaches 100\% by round 800 while test accuracy stagnates around 83\%. Beyond that point, additional weak learners appear to fit noise in the resampled bootstrap distribution rather than generalizable structure. Banana shows more modest overfitting, with a 3.5-point train--test gap at $K=1000$ compared to nearly 17 points on Splice, consistent with the lower-dimensional input space.
 
-The SVM also achieves 100\% training accuracy on Splice, yet its test accuracy is 89.15\%---substantially higher. The maximum-margin principle acts as an implicit regularizer by pushing the decision boundary as far as possible from the nearest training points; AdaBoost with Pocket Algorithm base learners has no equivalent structural bias to resist memorization.
+The SVM also achieves 100\% training accuracy on Splice, with test accuracy of 89.15\%, substantially higher than AdaBoost. The maximum-margin objective provides implicit regularization by maximizing the separation between the boundary and the nearest training points; AdaBoost with Pocket Algorithm base learners has no equivalent mechanism.
 
 \subsection{Kernel Analysis}
 
-The Banana dataset reveals a stark divide between kernels. The linear and sigmoid kernels achieve only $\sim$55\% accuracy---barely above the 50\% random baseline for a balanced binary problem. This confirms that Banana's crescent-shaped decision boundary cannot be captured by a hyperplane in the original or sigmoid-warped feature space.
+The Banana dataset reveals a stark divide between kernels. The linear and sigmoid kernels achieve only $\sim$55\% accuracy, just above the 50\% random baseline for a balanced binary problem. This confirms that Banana's crescent-shaped decision boundary cannot be captured by a hyperplane in the original or sigmoid-warped feature space.
 
 The polynomial kernel (degree 4) reaches 89.10\%, close to RBF's 90.14\%. A high-degree polynomial can approximate curved boundaries, but is sensitive to degree choice and can exhibit numerical instability for points far from the origin.
 
@@ -379,7 +379,7 @@ Several limitations affect the comparison:
 
 \section{CONCLUSION}
 
-This work pitted two principled approaches to non-linear binary classification against each other---Boosted Perceptrons built from Pocket Algorithm weak learners, and RBF-kernel SVMs---across datasets that stress-test different aspects of each method. The key findings are:
+This work compared two approaches to non-linear binary classification, Boosted Perceptrons built from Pocket Algorithm weak learners and RBF-kernel SVMs, on the Banana and Splice datasets. The key findings are:
 
 \begin{enumerate}
 \item \textbf{SVM achieves higher test accuracy} on both datasets: 90.14\% vs.\ 89.18\% on Banana, and 89.15\% vs.\ 83.17\% on Splice. The RBF kernel emerged as the best choice across both problems.
@@ -391,7 +391,7 @@ This work pitted two principled approaches to non-linear binary classification a
 
 For practical applications where both accuracy and computational efficiency matter, the RBF-kernel SVM provides the better trade-off. AdaBoost with Pocket Algorithm learners remains an instructive demonstration of how weak learners can be combined into strong classifiers, and offers more transparent control over model complexity through the ensemble size $K$.
 
-Together, these results suggest that maximum-margin geometry---even with an off-the-shelf library---can match or outperform a carefully designed boosting ensemble at a fraction of the training cost, particularly when the feature space is rich and training data is limited.
+Overall, these results indicate that an RBF-kernel SVM provides higher accuracy and substantially lower training cost than a 1000-round boosting ensemble, with the advantage more pronounced in higher-dimensional settings.
 
 \begin{thebibliography}{9}
 
