@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where pdflatex *)",
+      "Bash(choco list *)",
+      "Bash(choco install *)",
+      "Bash(cmd.exe /c \"where pdflatex\")",
+      "Bash(cmd.exe /c \"where choco\")",
+      "Bash(cmd.exe /c \"choco install miktex -y\")",
+      "Read(//c/Program Files/MiKTeX/miktex/bin/x64/**)",
+      "Read(//c/Users/C5396183/AppData/Local/Programs/MiKTeX/miktex/bin/x64/**)",
+      "Read(//c/Program Files/**)",
+      "Bash(cmd.exe /c \"where /R \\\\\"C:\\\\\\\\Program Files\\\\\" pdflatex.exe 2>NUL\")",
+      "Bash(cmd.exe /c \"where /R \\\\\"C:\\\\\\\\Users\\\\\\\\C5396183\\\\\\\\AppData\\\\\" pdflatex.exe 2>NUL\")",
+      "Bash(pip install *)",
+      "Bash(conda --version)",
+      "Bash(curl -SL https://github.com/nicholasgasior/gpp/releases/latest/download/tectonic-x86_64-pc-windows-msvc.zip -o /tmp/tectonic.zip)",
+      "Bash(winget --version)"
+    ]
+  }
+}
